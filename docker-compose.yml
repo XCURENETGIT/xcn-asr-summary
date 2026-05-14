@@ -1,0 +1,179 @@
+name: xcn-asr-summary
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    container_name: xcn-asr-summary-mariadb
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-telsummary}
+      MARIADB_USER: ${DB_USER:-teluser}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-telpass}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpass}
+      TZ: Asia/Seoul
+    ports:
+      - "13306:3306"
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - ./data/db:/var/lib/mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+
+  api:
+    image: ${ASR_SUMMARY_IMAGE_REPO:-xcn-asr-summary}/api-gpu:${ASR_SUMMARY_IMAGE_TAG:-latest}
+    build:
+      context: .
+      dockerfile: ${ASR_SUMMARY_DOCKERFILE:-Dockerfile}
+    container_name: xcn-asr-summary-api-gpu
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      API_KEY: ${API_KEY:-}
+      HF_HUB_DISABLE_XET: ${HF_HUB_DISABLE_XET:-1}
+      DB_HOST: mariadb
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-telsummary}
+      DB_USER: ${DB_USER:-teluser}
+      DB_PASSWORD: ${DB_PASSWORD:-telpass}
+      DB_CONNECT_TIMEOUT: ${DB_CONNECT_TIMEOUT:-10}
+      WHISPER_MODEL: ${WHISPER_MODEL:-large-v3-turbo}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8_float32}
+      WHISPER_LANGUAGE: ${WHISPER_LANGUAGE:-ko}
+      HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+      TRANSFORMERS_OFFLINE: ${TRANSFORMERS_OFFLINE:-1}
+      DIARIZATION_ENABLED: ${DIARIZATION_ENABLED:-false}
+      STEREO_CHANNEL_SPEAKERS_ENABLED: ${STEREO_CHANNEL_SPEAKERS_ENABLED:-true}
+      PYANNOTE_MODEL: ${PYANNOTE_MODEL:-pyannote/speaker-diarization-3.1}
+      PYANNOTE_DEVICE: ${PYANNOTE_DEVICE:-cuda}
+      PYANNOTE_NUM_SPEAKERS: ${PYANNOTE_NUM_SPEAKERS:-0}
+      PYANNOTE_MIN_SPEAKERS: ${PYANNOTE_MIN_SPEAKERS:-0}
+      PYANNOTE_MAX_SPEAKERS: ${PYANNOTE_MAX_SPEAKERS:-0}
+      SLLM_PROVIDER: ${SLLM_PROVIDER:-llamacpp}
+      SLLM_BASE_URL: ${SLLM_BASE_URL:-http://sllm-llamacpp:8080}
+      SLLM_MODEL: ${SLLM_MODEL:-mykor/A.X-4.0-Light-gguf:Q4_K_M}
+      SLLM_API_KEY: ${SLLM_API_KEY:-xcn-local}
+      SLLM_TIMEOUT_SEC: ${SLLM_TIMEOUT_SEC:-120}
+      SLLM_STARTUP_WAIT_SEC: ${SLLM_STARTUP_WAIT_SEC:-600}
+      SLLM_CONNECT_RETRIES: ${SLLM_CONNECT_RETRIES:-24}
+      SLLM_CONNECT_RETRY_DELAY_SEC: ${SLLM_CONNECT_RETRY_DELAY_SEC:-5}
+      SLLM_MAX_TOKENS: ${SLLM_MAX_TOKENS:-192}
+      SLLM_MAX_PROMPT_CHARS: ${SLLM_MAX_PROMPT_CHARS:-10000}
+      SLLM_TEMPERATURE: ${SLLM_TEMPERATURE:-0.2}
+      SLLM_TOP_P: ${SLLM_TOP_P:-0.9}
+      SLLM_REQUEST_PATH: ${SLLM_REQUEST_PATH:-/v1/chat/completions}
+      SLLM_USE_CHAT_ENDPOINT: ${SLLM_USE_CHAT_ENDPOINT:-true}
+      SPEAKER_PAUSE_THRESHOLD_SEC: ${SPEAKER_PAUSE_THRESHOLD_SEC:-0.8}
+      SPEAKER_MAX_TURN_MERGE_SEC: ${SPEAKER_MAX_TURN_MERGE_SEC:-0.45}
+      SPEAKER_ACK_MAX_CHARS: ${SPEAKER_ACK_MAX_CHARS:-10}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-200}
+      SAVE_UPLOADS: ${SAVE_UPLOADS:-true}
+      SAVE_TRAINING_CLIPS: ${SAVE_TRAINING_CLIPS:-true}
+      VOICE_DIR: ${VOICE_DIR:-/app/data/voice}
+      VOICE_FINISH_DIR: ${VOICE_FINISH_DIR:-/app/data/voice_finish}
+      TRANSLATE_DIR: ${TRANSLATE_DIR:-/app/data/translate}
+      VOICE_WATCH_ENABLED: ${VOICE_WATCH_ENABLED:-true}
+      VOICE_WATCH_INTERVAL_SEC: ${VOICE_WATCH_INTERVAL_SEC:-30}
+      VOICE_WATCH_BATCH_LIMIT: ${VOICE_WATCH_BATCH_LIMIT:-1}
+      VOICE_BATCH_EXTENSIONS: ${VOICE_BATCH_EXTENSIONS:-.wav}
+      TRAINING_CLIP_FORMAT: ${TRAINING_CLIP_FORMAT:-wav}
+      TRAINING_DOCKER_IMAGE: ${TRAINING_DOCKER_IMAGE:-xcn-asr-summary/whisper-train:latest}
+      TRAINING_GPU_DEVICE: ${TRAINING_GPU_DEVICE:-0}
+      TRAINING_HOST_PROJECT_DIR: ${TRAINING_HOST_PROJECT_DIR:-/data01/xcn-asr-summary}
+      TRAINING_DEFAULT_MAX_STEPS: ${TRAINING_DEFAULT_MAX_STEPS:-40}
+      XCN_CRYPTO_KEY_FILE: ${XCN_CRYPTO_KEY_FILE:-/models/enckey}
+      XCN_CRYPTO_NATIVE: ${XCN_CRYPTO_NATIVE:-auto}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HF_HOME: /models/hf
+      XDG_CACHE_HOME: /models/cache
+      NVIDIA_VISIBLE_DEVICES: ${WHISPER_GPU_DEVICE:-all}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+    ports:
+      - "18080:8000"
+    runtime: nvidia
+    volumes:
+      - ./data:/app/data
+      - ./models:/models
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+
+  sllm-llamacpp:
+    image: ${ASR_SUMMARY_LLAMACPP_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
+    container_name: xcn-asr-summary-llamacpp-gpu
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HOME: /models/hf-cache
+      XDG_CACHE_HOME: /models/cache
+      CUDA_VISIBLE_DEVICES: ${LLAMACPP_CUDA_VISIBLE_DEVICES:-0}
+      NVIDIA_VISIBLE_DEVICES: ${LLAMACPP_GPU_DEVICE:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+    command:
+      - -m
+      - ${LLAMACPP_MODEL_PATH:-/models/hf-cache/hub/models--mykor--A.X-4.0-Light-gguf/snapshots/b1cd7c8eee44c52ce4683545b7140658659e92cd/A.X-4.0-Light-Q4_K_M.gguf}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --ctx-size
+      - ${LLAMACPP_CTX_SIZE:-4096}
+      - --n-gpu-layers
+      - ${LLAMACPP_N_GPU_LAYERS:-24}
+      - --parallel
+      - ${LLAMACPP_PARALLEL:-1}
+      - --threads
+      - ${LLAMACPP_THREADS:-8}
+      - --batch-size
+      - ${LLAMACPP_BATCH_SIZE:-512}
+      - --ubatch-size
+      - ${LLAMACPP_UBATCH_SIZE:-128}
+    ports:
+      - "18082:8080"
+    runtime: nvidia
+    ipc: host
+    volumes:
+      - ${LLAMACPP_HOST_MODELS:-./models}:/models
+    restart: unless-stopped
+
+  sllm-vllm:
+    image: ${ASR_SUMMARY_VLLM_IMAGE:-vllm/vllm-openai:latest}
+    container_name: xcn-asr-summary-vllm-gpu
+    profiles: ["sllm-vllm"]
+    environment:
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HUB_DISABLE_XET: ${HF_HUB_DISABLE_XET:-1}
+      HF_HOME: /model-store/hf-cache
+      XDG_CACHE_HOME: /model-store/cache
+      CUDA_VISIBLE_DEVICES: ${VLLM_GPU_DEVICE:-1}
+      NVIDIA_VISIBLE_DEVICES: ${VLLM_GPU_DEVICE:-1}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+    command:
+      - --model
+      - ${SLLM_VLLM_MODEL:-skt/A.X-4.0-Light}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --served-model-name
+      - ${SLLM_SERVED_MODEL_NAME:-ax-4-light}
+      - --gpu-memory-utilization
+      - ${VLLM_GPU_MEMORY_UTILIZATION:-0.92}
+      - --max-model-len
+      - ${VLLM_MAX_MODEL_LEN:-16384}
+      - --enforce-eager
+      - --tensor-parallel-size
+      - ${VLLM_TENSOR_PARALLEL_SIZE:-1}
+    ports:
+      - "18081:8000"
+    runtime: nvidia
+    ipc: host
+    volumes:
+      - ${SLLM_VLLM_HOST_MODELS:-./models}:/model-store
+    restart: unless-stopped

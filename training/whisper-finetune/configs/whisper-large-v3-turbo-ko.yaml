@@ -1,0 +1,28 @@
+model_name_or_path: openai/whisper-large-v3-turbo
+language: Korean
+task: transcribe
+
+train_manifest: /workspace/data/manifest/train.jsonl
+validation_manifest: /workspace/data/manifest/validation.jsonl
+output_dir: /workspace/outputs/large-v3-turbo-ko-custom
+ct2_output_dir: /models/whisper/large-v3-turbo-ko-custom-ct2
+
+audio_column: audio
+text_column: text
+sampling_rate: 16000
+max_duration_seconds: 30.0
+
+per_device_train_batch_size: 4
+per_device_eval_batch_size: 4
+gradient_accumulation_steps: 4
+learning_rate: 0.00001
+warmup_steps: 50
+max_steps: 1000
+eval_steps: 100
+save_steps: 100
+logging_steps: 10
+generation_max_length: 225
+fp16: true
+gradient_checkpointing: true
+predict_with_generate: true
+save_total_limit: 3

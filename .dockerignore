@@ -1,0 +1,16 @@
+.git
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+dist
+build
+data
+models
+training/whisper-finetune/data
+training/whisper-finetune/outputs
+.env
+*.tar
+*.tar.gz

@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>xcn-asr-summary Admin</title>
+    <link rel="stylesheet" href="/admin/static/styles.css?v=20260416-training-ops" />
+  </head>
+  <body>
+    <div class="login-shell" id="loginShell">
+      <section class="login-card">
+        <p class="eyebrow">Operations Console</p>
+        <h1>통화 STT 운영 관리</h1>
+        <p class="muted">API Key를 입력하면 STT 결과 조회, 원문 수정, 학습 데이터 큐 전달 기능을 사용할 수 있습니다.</p>
+        <label>
+          API Key
+          <input id="apiKeyInput" type="password" placeholder="X-API-Key" autocomplete="current-password" />
+        </label>
+        <button id="loginButton" class="primary-button">로그인</button>
+        <button id="guestButton" class="ghost-button">API Key 없이 접속</button>
+        <p class="hint" id="loginMessage"></p>
+        <p class="hint">서버 `API_KEY`가 비어 있으면 API Key 없이 접근 가능합니다.</p>
+      </section>
+    </div>
+
+    <main class="app-shell" id="appShell" hidden>
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">XS</span>
+          <div>
+            <strong>xcn-asr-summary</strong>
+            <small>Admin workspace</small>
+          </div>
+        </div>
+        <nav>
+          <button class="nav-item active" data-view="calls">STT 변환 목록</button>
+          <button class="nav-item" data-view="training">학습 데이터 확인</button>
+          <button class="nav-item" data-view="trainingOps">학습 관리</button>
+        </nav>
+        <div class="sidebar-foot">
+          <small id="healthText">상태 확인 전</small>
+          <button id="logoutButton">로그아웃</button>
+        </div>
+      </aside>
+
+      <section class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Speech to Text Quality Loop</p>
+            <h2 id="pageTitle">STT 변환 목록</h2>
+          </div>
+          <div class="top-actions">
+            <button id="refreshButton" class="ghost-button">새로고침</button>
+          </div>
+        </header>
+
+        <section id="callsView" class="view-grid">
+          <section class="panel list-panel">
+            <div class="panel-head">
+              <div>
+                <h3>변환 목록</h3>
+                <p>파일명, 요청 ID, 전사/요약 내용으로 검색합니다.</p>
+              </div>
+            </div>
+            <form class="filters" id="searchForm">
+              <input name="q" placeholder="검색어" />
+              <input name="caller" placeholder="발신번호" />
+              <input name="extension_number" placeholder="내선번호" />
+              <input name="callee" placeholder="수신번호" />
+              <select name="processing_status">
+                <option value="">전체 상태</option>
+                <option value="completed">completed</option>
+                <option value="failed">failed</option>
+              </select>
+              <select name="input_type">
+                <option value="">전체 경로</option>
+                <option value="api_request">API</option>
+                <option value="voice_file">voice 폴더</option>
+              </select>
+              <input name="date_from" type="datetime-local" />
+              <input name="date_to" type="datetime-local" />
+              <button class="primary-button" type="submit">조회</button>
+            </form>
+            <div class="call-list" id="callList"></div>
+          </section>
+
+          <section class="panel detail-panel">
+            <div class="empty-state" id="emptyDetail">
+              <strong>목록에서 항목을 선택하세요.</strong>
+              <span>음성 재생, STT 텍스트 수정, 학습 데이터 전달이 이 영역에서 처리됩니다.</span>
+            </div>
+
+            <article id="detailContent" hidden>
+              <div class="detail-title">
+                <div>
+                  <p class="eyebrow" id="detailStatus">-</p>
+                  <h3 id="detailFilename">-</h3>
+                  <p id="detailMeta" class="muted">-</p>
+                </div>
+              </div>
+
+              <div class="wave-player" id="wavePlayer">
+                <div id="waveform" class="waveform"></div>
+                <div class="wave-controls">
+                  <button id="wavePlayButton" class="primary-button" type="button">재생</button>
+                  <span id="waveDuration" class="muted">00:00 / 00:00</span>
+                </div>
+                <audio id="audioPlayer" controls preload="metadata"></audio>
+              </div>
+
+              <div class="timeline-card">
+                <div class="timeline-head">
+                  <p class="eyebrow">재생 위치 변환 텍스트</p>
+                  <span id="activeTime" class="timeline-time">00:00</span>
+                </div>
+                <div id="segmentList" class="segment-list">
+                  <p class="active-segment">재생하면 해당 구간 텍스트가 강조됩니다.</p>
+                </div>
+              </div>
+
+              <div class="conversation-summary">
+                <span>전체 요약</span>
+                <p id="conversationalSummary"></p>
+              </div>
+
+              <div class="summary-grid">
+                <div><span>문의</span><p id="inquirySummary"></p></div>
+                <div><span>이슈</span><p id="issueSummary"></p></div>
+                <div><span>안내</span><p id="guidanceSummary"></p></div>
+                <div><span>처리</span><p id="outcomeSummary"></p></div>
+                <div><span>리스크</span><p id="riskSummary"></p></div>
+                <div><span>후속</span><p id="actionSummary"></p></div>
+              </div>
+
+              <p class="detail-help">학습 데이터는 segment별 `수정` 버튼으로 생성합니다. 저장 시 해당 음성 구간만 별도 clip으로 보관됩니다.</p>
+            </article>
+          </section>
+        </section>
+
+        <section id="trainingView" class="panel training-panel" hidden>
+          <div class="panel-head">
+            <div>
+              <h3>학습 데이터 목록</h3>
+              <p>상태별로 학습 대기/사용 완료 데이터를 확인합니다.</p>
+            </div>
+            <div class="button-row compact">
+              <label class="inline-filter">
+                <span>상태</span>
+                <select id="trainingStatusFilter">
+                  <option value="queued">queued</option>
+                  <option value="used">used</option>
+                  <option value="rejected">rejected</option>
+                  <option value="">전체</option>
+                </select>
+              </label>
+              <button id="exportManifestButton" class="ghost-button">Manifest 다운로드</button>
+              <button id="deleteQueuedButton" class="danger-button">queued 전체 삭제</button>
+            </div>
+          </div>
+          <div class="training-list" id="trainingList"></div>
+        </section>
+
+        <section id="trainingOpsView" class="panel training-panel" hidden>
+          <div class="panel-head">
+            <div>
+              <h3>학습 관리</h3>
+              <p>queued 학습 데이터로 Whisper 모델을 학습하고 생성 모델의 CER/WER를 확인합니다.</p>
+            </div>
+          </div>
+          <div class="training-controls">
+            <label>
+              기준 모델
+              <select id="trainingBaseModel"></select>
+            </label>
+            <label>
+              모델 이름
+              <input id="trainingModelName" placeholder="whisper-quick-ct2" />
+            </label>
+            <label class="checkbox-label">
+              <input id="trainingIncludeUsed" type="checkbox" checked />
+              used 재사용
+            </label>
+            <label>
+              Max steps
+              <input id="trainingMaxSteps" type="number" min="1" max="5000" value="40" />
+            </label>
+            <label>
+              Learning rate
+              <input id="trainingLearningRate" value="0.00002" />
+            </label>
+            <label>
+              GPU
+              <input id="trainingGpuDevice" value="0" />
+            </label>
+            <button id="startTrainingButton" class="primary-button" type="button">학습 시작</button>
+          </div>
+          <div class="training-ops-grid">
+            <section>
+              <h4>학습 Job</h4>
+              <div id="trainingJobList" class="training-list compact-list"></div>
+            </section>
+            <section>
+              <h4>생성 모델</h4>
+              <div id="trainingModelList" class="training-list compact-list"></div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" hidden></div>
+    <script type="module" src="/admin/static/app.js?v=20260417-continued-training"></script>
+  </body>
+</html>
