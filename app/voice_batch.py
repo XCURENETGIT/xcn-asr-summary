@@ -15,7 +15,6 @@ from . import config, db
 from .filename_metadata import parse_collected_audio_filename
 from .logging_utils import configure_logging
 from .pipeline import transcribe_and_summarize
-from .sllm_client import wait_for_sllm
 
 logger = logging.getLogger("xcn-asr-summary.voice-batch")
 
@@ -32,11 +31,11 @@ def _json_default(value: object) -> str:
 
 def _safe_output_path(filename: str) -> Path:
     stem = Path(filename).stem
-    output = config.TRANSLATE_DIR / f"{stem}.json"
+    output = config.TRANSLATE_DIR / f"{stem}.txt"
     if not output.exists():
         return output
     suffix = datetime.now().strftime("%Y%m%d%H%M%S")
-    return config.TRANSLATE_DIR / f"{stem}.{suffix}.json"
+    return config.TRANSLATE_DIR / f"{stem}.{suffix}.txt"
 
 
 def _safe_finish_path(source: Path) -> Path:
@@ -45,6 +44,14 @@ def _safe_finish_path(source: Path) -> Path:
         return target
     suffix = datetime.now().strftime("%Y%m%d%H%M%S")
     return config.VOICE_FINISH_DIR / f"{source.stem}.{suffix}{source.suffix}"
+
+
+def _safe_failed_path(source: Path) -> Path:
+    target = config.VOICE_FAILED_DIR / source.name
+    if not target.exists():
+        return target
+    suffix = datetime.now().strftime("%Y%m%d%H%M%S")
+    return config.VOICE_FAILED_DIR / f"{source.stem}.{suffix}{source.suffix}"
 
 
 def _acquire_lock(source: Path) -> Path | None:
@@ -155,6 +162,23 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
     tmp_path.replace(path)
 
 
+def _write_text_atomic(path: Path, text: str) -> None:
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text((text or "").strip() + "\n", encoding="utf-8")
+    tmp_path.replace(path)
+
+
+def _move_failed_voice_file(source: Path, exc: Exception) -> Path | None:
+    if not source.exists():
+        logger.warning("failed voice file no longer exists, skip quarantine: %s", source)
+        return None
+    config.VOICE_FAILED_DIR.mkdir(parents=True, exist_ok=True)
+    failed_path = _safe_failed_path(source)
+    shutil.move(str(source), str(failed_path))
+    logger.warning("moved failed voice file: %s -> %s error=%s", source.name, failed_path, exc)
+    return failed_path
+
+
 def process_voice_file(source: Path) -> dict[str, Any]:
     lock_path = _acquire_lock(source)
     if lock_path is None:
@@ -167,7 +191,7 @@ def process_voice_file(source: Path) -> dict[str, Any]:
         logger.info("processing voice file: %s", source)
         result = transcribe_and_summarize(source)
         payload = _result_payload(source, result, metadata)
-        _write_json_atomic(output_path, payload)
+        _write_text_atomic(output_path, result.transcript_text)
         shutil.move(str(source), str(finish_path))
         summary_id = _insert_completed_summary(source, finish_path, payload, result, metadata)
         logger.info("completed voice file: %s -> %s", source.name, output_path.name)
@@ -188,11 +212,11 @@ def process_voice_batch(limit: int | None = None, *, wait_for_dependencies: bool
     configure_logging(config.APP_NAME, config.LOG_DIR, config.LOG_LEVEL)
     config.VOICE_DIR.mkdir(parents=True, exist_ok=True)
     config.VOICE_FINISH_DIR.mkdir(parents=True, exist_ok=True)
+    config.VOICE_FAILED_DIR.mkdir(parents=True, exist_ok=True)
     config.TRANSLATE_DIR.mkdir(parents=True, exist_ok=True)
     if wait_for_dependencies:
         db.wait_for_db()
         db.ensure_schema()
-        wait_for_sllm()
 
     files = _iter_voice_files()
     if limit is not None:
@@ -204,7 +228,15 @@ def process_voice_batch(limit: int | None = None, *, wait_for_dependencies: bool
             results.append(process_voice_file(source))
         except Exception as exc:
             logger.exception("failed to process voice file: %s", source)
-            results.append({"status": "failed", "filename": source.name, "error": str(exc)})
+            failed_path = _move_failed_voice_file(source, exc)
+            results.append(
+                {
+                    "status": "failed",
+                    "filename": source.name,
+                    "error": str(exc),
+                    "failed_file": failed_path.name if failed_path else None,
+                }
+            )
     return results
 
 
@@ -248,7 +280,6 @@ def main() -> None:
     if args.watch:
         db.wait_for_db()
         db.ensure_schema()
-        wait_for_sllm()
         run_voice_watch_loop(interval_sec=args.interval_sec, limit=args.limit)
     else:
         results = process_voice_batch(limit=args.limit)

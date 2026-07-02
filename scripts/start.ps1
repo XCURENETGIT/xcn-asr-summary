@@ -12,9 +12,9 @@ Set-Location $RootDir
 
 $composeArgs = @("-f", "docker-compose.yml", "--env-file", ".env", "--env-file", ".env.llamacpp-gguf")
 
-$services = @("mariadb", "sllm-llamacpp", "api")
+$services = @("mariadb", "api")
 if ($Sllm) {
-    $composeArgs = @("-f", "docker-compose.yml", "--env-file", ".env", "--env-file", ".env.llamacpp-gguf")
+    $composeArgs = @("-f", "docker-compose.yml", "--env-file", ".env", "--env-file", ".env.llamacpp-gguf", "--profile", "sllm")
     $services = @("mariadb", "sllm-llamacpp", "api")
 }
 if ($Vllm) {

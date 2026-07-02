@@ -12,6 +12,11 @@ SOURCE_MODE="binary"
 INCLUDE_VLLM_IMAGE=false
 INCLUDE_LLAMACPP_IMAGE=false
 INCLUDE_MODEL_CACHE=false
+WHISPER_CACHE_DIR="${WHISPER_CACHE_DIR:-models/hf/hub/models--mobiuslabsgmbh--faster-whisper-large-v3-turbo}"
+WHISPER_PACKAGE_MODEL="large-v3-turbo"
+HF_HUB_OFFLINE_VALUE=0
+TRANSFORMERS_OFFLINE_VALUE=0
+MODEL_LOCAL_FILES_ONLY_VALUE=0
 
 usage() {
   cat <<'EOF'
@@ -76,6 +81,26 @@ if [[ "$SOURCE_MODE" != "binary" && "$SOURCE_MODE" != "source" ]]; then
   exit 1
 fi
 
+if [[ "$INCLUDE_MODEL_CACHE" == "true" ]]; then
+  if [[ ! -d "$WHISPER_CACHE_DIR" ]]; then
+    echo "Whisper cache directory not found: $WHISPER_CACHE_DIR" >&2
+    echo "Start the API once online so faster-whisper large-v3-turbo is downloaded before packaging." >&2
+    exit 1
+  fi
+  if ! find -L "$WHISPER_CACHE_DIR" -type f -name 'model.bin' | grep -q .; then
+    echo "Whisper CTranslate2 model.bin not found under: $WHISPER_CACHE_DIR" >&2
+    exit 1
+  fi
+  WHISPER_MODEL_BIN="$(find -L "$WHISPER_CACHE_DIR" -type f -name 'model.bin' | head -n 1)"
+  WHISPER_SNAPSHOT_DIR="$(dirname "$WHISPER_MODEL_BIN")"
+  WHISPER_PACKAGE_MODEL="/models/hf/hub/$(basename "$WHISPER_CACHE_DIR")/snapshots/$(basename "$WHISPER_SNAPSHOT_DIR")"
+  HF_HUB_OFFLINE_VALUE=1
+  TRANSFORMERS_OFFLINE_VALUE=1
+  MODEL_LOCAL_FILES_ONLY_VALUE=1
+else
+  echo "[package] model cache is not included; packaged .env allows online model download on first start"
+fi
+
 IMAGE_REPO="${ASR_SUMMARY_IMAGE_REPO:-${TEL_SUMMARY_IMAGE_REPO:-xcn-asr-summary}}"
 IMAGE_TAG="${ASR_SUMMARY_IMAGE_TAG:-${TEL_SUMMARY_IMAGE_TAG:-$VERSION}}"
 API_IMAGE="${IMAGE_REPO}/api-gpu:${IMAGE_TAG}"
@@ -128,14 +153,20 @@ DB_USER=teluser
 DB_PASSWORD=telpass
 DB_ROOT_PASSWORD=rootpass
 
-WHISPER_MODEL=large-v3-turbo
+WHISPER_MODEL=$WHISPER_PACKAGE_MODEL
 WHISPER_DEVICE=cuda
 WHISPER_COMPUTE_TYPE=int8_float32
 WHISPER_LANGUAGE=ko
+HF_HUB_OFFLINE=$HF_HUB_OFFLINE_VALUE
+TRANSFORMERS_OFFLINE=$TRANSFORMERS_OFFLINE_VALUE
+MODEL_LOCAL_FILES_ONLY=$MODEL_LOCAL_FILES_ONLY_VALUE
 
+SUMMARY_BACKEND=stt_only
 VOICE_WATCH_ENABLED=true
 VOICE_WATCH_INTERVAL_SEC=30
 VOICE_WATCH_BATCH_LIMIT=1
+VOICE_FAILED_DIR=/app/data/voice_failed
+TRANSLATE_DIR=/app/data/translate
 SLLM_API_KEY=xcn-local
 SLLM_STARTUP_WAIT_SEC=600
 SLLM_CONNECT_RETRIES=24
@@ -159,9 +190,9 @@ if [[ ! -f .env ]]; then
   echo "[install] created .env from .env.package"
 fi
 
-mkdir -p data/{uploads,training-clips,voice,voice_finish,translate,db} models
+mkdir -p data/{uploads,training-clips,voice,voice_finish,voice_failed,translate,db} models
 chmod +x scripts/*.sh
-echo "[install] run: ./scripts/start.sh --sllm"
+echo "[install] run: ./scripts/start.sh"
 EOF
 chmod +x "$STAGING/install.sh" "$STAGING"/scripts/*.sh
 

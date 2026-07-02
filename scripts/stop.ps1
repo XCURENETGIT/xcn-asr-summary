@@ -11,7 +11,7 @@ Set-Location $RootDir
 
 $composeArgs = @("-f", "docker-compose.yml", "--env-file", ".env", "--env-file", ".env.llamacpp-gguf")
 if ($Sllm) {
-    $composeArgs = @("-f", "docker-compose.yml", "--env-file", ".env", "--env-file", ".env.llamacpp-gguf")
+    $composeArgs = @("-f", "docker-compose.yml", "--env-file", ".env", "--env-file", ".env.llamacpp-gguf", "--profile", "sllm")
 }
 if ($Vllm) {
     $composeArgs = @("-f", "docker-compose.yml", "--env-file", ".env", "--env-file", ".env.vllm", "--profile", "sllm-vllm")

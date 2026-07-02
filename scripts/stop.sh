@@ -23,7 +23,7 @@ EOF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sllm)
-      COMPOSE_ARGS=(-f docker-compose.yml --env-file .env --env-file .env.llamacpp-gguf)
+      COMPOSE_ARGS=(-f docker-compose.yml --env-file .env --env-file .env.llamacpp-gguf --profile sllm)
       shift
       ;;
     --vllm)

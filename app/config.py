@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 
 APP_NAME = "xcn-asr-summary"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.2"
 
 BASE_DIR = Path(os.getenv("BASE_DIR", "/app"))
 DATA_DIR = Path(os.getenv("DATA_DIR", str(BASE_DIR / "data")))
@@ -13,6 +13,7 @@ TRAINING_CLIP_DIR = Path(os.getenv("TRAINING_CLIP_DIR", str(DATA_DIR / "training
 LOG_DIR = Path(os.getenv("LOG_DIR", str(DATA_DIR / "logs")))
 VOICE_DIR = Path(os.getenv("VOICE_DIR", str(DATA_DIR / "voice")))
 VOICE_FINISH_DIR = Path(os.getenv("VOICE_FINISH_DIR", str(DATA_DIR / "voice_finish")))
+VOICE_FAILED_DIR = Path(os.getenv("VOICE_FAILED_DIR", str(DATA_DIR / "voice_failed")))
 TRANSLATE_DIR = Path(os.getenv("TRANSLATE_DIR", str(DATA_DIR / "translate")))
 VOICE_WATCH_ENABLED = os.getenv("VOICE_WATCH_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
 VOICE_WATCH_INTERVAL_SEC = float(os.getenv("VOICE_WATCH_INTERVAL_SEC", "30"))
@@ -27,6 +28,18 @@ API_KEY = os.getenv("API_KEY", "").strip()
 API_KEY_NAME = "X-API-Key"
 HF_TOKEN = os.getenv("HF_TOKEN", "").strip() or None
 
+
+def _env_bool(name: str, default: str = "false") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "on"}
+
+
+HF_HUB_OFFLINE = _env_bool("HF_HUB_OFFLINE")
+TRANSFORMERS_OFFLINE = _env_bool("TRANSFORMERS_OFFLINE")
+MODEL_LOCAL_FILES_ONLY = _env_bool(
+    "MODEL_LOCAL_FILES_ONLY",
+    "true" if HF_HUB_OFFLINE or TRANSFORMERS_OFFLINE else "false",
+)
+
 DB_HOST = os.getenv("DB_HOST", "mariadb")
 DB_PORT = int(os.getenv("DB_PORT", "3306"))
 DB_NAME = os.getenv("DB_NAME", "telsummary")
@@ -39,15 +52,15 @@ WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cuda")
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "float16")
 WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "ko")
 
-DIARIZATION_ENABLED = os.getenv("DIARIZATION_ENABLED", "false").lower() == "true"
-STEREO_CHANNEL_SPEAKERS_ENABLED = os.getenv("STEREO_CHANNEL_SPEAKERS_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+DIARIZATION_ENABLED = _env_bool("DIARIZATION_ENABLED")
+STEREO_CHANNEL_SPEAKERS_ENABLED = _env_bool("STEREO_CHANNEL_SPEAKERS_ENABLED", "true")
 PYANNOTE_MODEL = os.getenv("PYANNOTE_MODEL", "pyannote/speaker-diarization-3.1").strip()
 PYANNOTE_DEVICE = os.getenv("PYANNOTE_DEVICE", WHISPER_DEVICE).strip()
 PYANNOTE_NUM_SPEAKERS = int(os.getenv("PYANNOTE_NUM_SPEAKERS", "0"))
 PYANNOTE_MIN_SPEAKERS = int(os.getenv("PYANNOTE_MIN_SPEAKERS", "0"))
 PYANNOTE_MAX_SPEAKERS = int(os.getenv("PYANNOTE_MAX_SPEAKERS", "0"))
 
-SUMMARY_BACKEND = "sllm"
+SUMMARY_BACKEND = os.getenv("SUMMARY_BACKEND", "stt_only").strip().lower()
 SLLM_PROVIDER = os.getenv("SLLM_PROVIDER", "llamacpp").strip().lower()
 SLLM_BASE_URL = os.getenv("SLLM_BASE_URL", "http://sllm-llamacpp:8080").rstrip("/")
 SLLM_MODEL = os.getenv("SLLM_MODEL", "mykor/A.X-4.0-Light-gguf:Q4_K_M").strip()

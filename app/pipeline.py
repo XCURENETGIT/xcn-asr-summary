@@ -12,7 +12,7 @@ from pathlib import Path
 from faster_whisper import WhisperModel
 
 from . import config
-from .sllm_client import is_sllm_configured, request_summary
+from .sllm_client import request_summary
 
 logger = logging.getLogger("xcn-asr-summary")
 
@@ -68,6 +68,7 @@ def get_whisper_model() -> WhisperModel:
         config.WHISPER_MODEL,
         device=config.WHISPER_DEVICE,
         compute_type=config.WHISPER_COMPUTE_TYPE,
+        local_files_only=config.MODEL_LOCAL_FILES_ONLY,
     )
 
 
@@ -1819,11 +1820,7 @@ def _build_overall_summary(
 
 def transcribe_and_summarize(audio_path: Path) -> PipelineResult:
     start = time.perf_counter()
-    if not is_sllm_configured():
-        raise RuntimeError("SLLM_BASE_URL or SLLM_MODEL is not configured")
     whisper = get_whisper_model()
-    tokenizer = None
-    summary_model = None
 
     stereo_result = _transcribe_stereo_channels(whisper, audio_path)
     if stereo_result:
@@ -1861,25 +1858,11 @@ def transcribe_and_summarize(audio_path: Path) -> PipelineResult:
         speaker_turns = _refine_speaker_labels_by_text_role(speaker_turns)
         detected_language = getattr(info, "language", None)
         duration_seconds = float(getattr(info, "duration", 0.0) or 0.0)
-    summary_backend = config.SUMMARY_BACKEND
-    summary_model_name = config.SLLM_MODEL
-    primary_bundle = _build_summary_bundle(
-        speaker_turns,
-        transcript_text,
-        backend=summary_backend,
-        tokenizer=tokenizer,
-        summary_model=summary_model,
-    )
-    speaker_summaries = list(primary_bundle.pop("_speaker_summaries", []))
-    if not speaker_summaries:
-        speaker_summaries = _build_speaker_summaries(
-            speaker_turns,
-            backend=summary_backend,
-            tokenizer=tokenizer,
-            summary_model=summary_model,
-        )
-    summary_text = primary_bundle["summary_text"]
-    conversational_summary_text = primary_bundle["conversational_summary_text"]
+    summary_backend = "stt_only"
+    summary_model_name = "none"
+    speaker_summaries: list[dict[str, str]] = []
+    summary_text = ""
+    conversational_summary_text = ""
     speaker_turns = _split_speaker_turns_by_dialogue_units(_sort_speaker_turns(speaker_turns))
     speaker_segments = [asdict(turn) for turn in speaker_turns]
     processing_ms = int((time.perf_counter() - start) * 1000)

@@ -1,6 +1,6 @@
 # xcn-asr-summary
 
-유선 통화 음성 파일을 업로드하면 Whisper ASR로 전사하고, llama.cpp로 구동되는 A.X-4.0-Light GGUF 모델로 전체 요약과 화자별 요약을 생성한 뒤 MariaDB에 저장하는 Docker 기반 예제입니다. 기본 설정은 Whisper `large-v3-turbo`와 `mykor/A.X-4.0-Light-gguf:Q4_K_M` llama.cpp 서버를 GPU로 사용합니다.
+유선 통화 음성 파일을 업로드하면 Whisper ASR로 전사하고, STT 변환 텍스트를 저장하는 Docker 기반 예제입니다. 현재 기본 파이프라인은 sLLM 요약 단계를 호출하지 않는 STT-only 구성입니다.
 
 ## 구성
 
@@ -8,7 +8,6 @@
   - 음성 파일 업로드
   - Whisper 전사
   - 화자 turn 추정
-  - llama.cpp SLLM 화자별 요약 / 전체 요약
   - MariaDB 저장
 - `GET /calls/{call_id}`
   - 저장 결과 조회
@@ -62,11 +61,11 @@ curl -X POST "http://localhost:18080/calls/process" \
 
 - 입력: `data/voice/*.wav`
 - 파일명 규칙이 `발신번호_내선번호_년_월_일_시_분_초_월_일_시_분_초.wav`와 일치하면 발신번호, 내선번호, 통화 시작/종료 시각을 자동 저장
-- STT/요약 결과 JSON 저장: `data/translate/<원본파일명>.json`
+- STT 전사 텍스트 저장: `data/translate/<원본파일명>.txt`
 - DB 저장: `call_summaries.input_type='voice_file'`
 - 성공한 원본 파일 이동: `data/voice_finish/<원본파일명>.wav`
 - 처리 중복 방지: 원본 파일 옆에 `.lock` 파일을 생성해 동시 실행을 막음
-- 실패한 파일은 `data/voice`에 남겨 재처리 가능
+- 실패한 파일은 `data/voice_failed`로 이동해 watcher가 같은 파일을 계속 재시도하지 않음
 
 일부 파일만 테스트할 때:
 
@@ -77,9 +76,8 @@ curl -X POST "http://localhost:18080/calls/process" \
 ## 모델
 
 - ASR: `faster-whisper` (`large-v3-turbo`, GPU 기본)
-- 요약: `mykor/A.X-4.0-Light-gguf:Q4_K_M` via llama.cpp OpenAI-compatible API
 - 화자 분리: Whisper segment 기반 2인 통화 turn 추정
-- SLLM 실행: OpenAI-compatible endpoint 기반 `llama.cpp` 기본, vLLM 옵션 제공
+- SLLM 실행: 기본 파이프라인에서는 사용하지 않음. 기존 llama.cpp/vLLM 서비스 정의는 옵션으로 유지
 
 첫 실행 시 모델을 다운로드하므로 초기 기동이 오래 걸릴 수 있습니다.
 
@@ -133,8 +131,10 @@ curl -X POST "http://localhost:18080/calls/process" \
   - 배치 처리 입력 폴더. 기본 `/app/data/voice`
 - `VOICE_FINISH_DIR`
   - 처리 완료 원본 이동 폴더. 기본 `/app/data/voice_finish`
+- `VOICE_FAILED_DIR`
+  - STT/요약 실패 원본 이동 폴더. 기본 `/app/data/voice_failed`
 - `TRANSLATE_DIR`
-  - STT/요약 JSON 저장 폴더. 기본 `/app/data/translate`
+  - STT 전사 텍스트 저장 폴더. 기본 `/app/data/translate`
 - `VOICE_BATCH_EXTENSIONS`
   - 배치 처리할 확장자 목록. 기본 `.wav`
 - `VOICE_WATCH_ENABLED`
@@ -151,9 +151,9 @@ curl -X POST "http://localhost:18080/calls/process" \
 - Whisper는 기본적으로 GPU에서 실행됩니다.
 - `docker-compose.yml`은 구버전 Compose 호환을 위해 `runtime: nvidia`를 사용합니다.
 - 서버에는 NVIDIA 드라이버와 Docker GPU runtime이 준비되어 있어야 합니다.
-- A.X-4.0-Light 요약은 기본적으로 `sllm-llamacpp` 컨테이너에서 GGUF Q4_K_M 모델로 실행됩니다.
+- 기본 실행은 STT-only이며 `sllm-llamacpp` 컨테이너를 시작하지 않습니다.
 - 16GB GPU 환경을 고려해 llama.cpp 기본 context는 4096, GPU layer는 24로 제한합니다.
-- 기존 vLLM 방식은 `./scripts/start.sh --vllm`으로 선택할 수 있습니다.
+- 기존 llama.cpp/vLLM 방식은 옵션으로만 남아 있으며 각각 `./scripts/start.sh --sllm`, `./scripts/start.sh --vllm`으로 선택할 수 있습니다.
 
 설정 파일은 역할별로 분리합니다.
 
@@ -171,13 +171,13 @@ curl -X POST "http://localhost:18080/calls/process" \
 API 이미지는 `xcn-asr-summary/api-gpu:<버전>` 형태로 태그를 지정합니다.
 
 ```bash
-ASR_SUMMARY_IMAGE_TAG=1.0.0 ./scripts/start.sh --build --sllm
+ASR_SUMMARY_IMAGE_TAG=1.0.0 ./scripts/start.sh --build
 ```
 
 소스 노출을 줄여 배포하려면 Cython으로 `app/*.py`를 `.so`로 컴파일하는 바이너리 이미지를 사용합니다.
 
 ```bash
-ASR_SUMMARY_IMAGE_TAG=1.0.0 ./scripts/start.sh --build --binary --sllm
+ASR_SUMMARY_IMAGE_TAG=1.0.0 ./scripts/start.sh --build --binary
 ```
 
 컴파일된 `.so` 파일만 별도로 확인하거나 전달해야 할 때:

@@ -6,13 +6,14 @@ cd "$ROOT_DIR"
 
 COMPOSE_ARGS=(-f docker-compose.yml --env-file .env --env-file .env.llamacpp-gguf)
 
-SERVICES=(mariadb sllm-llamacpp api)
+SERVICES=(mariadb api)
 
 usage() {
   cat <<'EOF'
 Usage: scripts/start.sh [--sllm] [--vllm] [--build] [--binary]
 
 Options:
+  default   Start STT-only API and MariaDB.
   --sllm    Start llama.cpp/GGUF SLLM using .env.llamacpp-gguf.
   --vllm    Start vLLM profile using .env.vllm.
   --build   Build images before starting.
@@ -26,7 +27,7 @@ BINARY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sllm)
-      COMPOSE_ARGS=(-f docker-compose.yml --env-file .env --env-file .env.llamacpp-gguf)
+      COMPOSE_ARGS=(-f docker-compose.yml --env-file .env --env-file .env.llamacpp-gguf --profile sllm)
       SERVICES=(mariadb sllm-llamacpp api)
       shift
       ;;

@@ -32,7 +32,6 @@ from .schemas import (
     TrainingModelItem,
     TranscriptUpdateRequest,
 )
-from .sllm_client import is_sllm_configured, wait_for_sllm
 from . import training_manager
 from .xcn_crypto import XcnCryptoError, decrypt_file, is_encrypted_bytes
 from .voice_batch import run_voice_watch_loop
@@ -277,7 +276,6 @@ def startup() -> None:
     config.TRANSLATE_DIR.mkdir(parents=True, exist_ok=True)
     db.wait_for_db()
     db.ensure_schema()
-    wait_for_sllm()
     _ = get_whisper_model()
     if config.VOICE_WATCH_ENABLED:
         voice_watch_thread = threading.Thread(
@@ -295,8 +293,8 @@ def startup() -> None:
         "models loaded whisper=%s summary_backend=%s summary_model=%s sllm_configured=%s voice_watch_enabled=%s",
         config.WHISPER_MODEL,
         config.SUMMARY_BACKEND,
-        config.SLLM_MODEL,
-        is_sllm_configured(),
+        "none",
+        False,
         config.VOICE_WATCH_ENABLED,
     )
 
@@ -320,8 +318,8 @@ def health() -> HealthResponse:
         db_ready=db_ready,
         whisper_model=config.WHISPER_MODEL,
         summary_backend=config.SUMMARY_BACKEND,
-        summary_model=config.SLLM_MODEL,
-        sllm_configured=is_sllm_configured(),
+        summary_model="none",
+        sllm_configured=False,
     )
 
 
@@ -405,7 +403,7 @@ async def process_call(
             audio_duration_seconds=None,
             detected_language=None,
             speech_recognition_model=config.WHISPER_MODEL,
-            summary_generation_model=config.SLLM_MODEL,
+            summary_generation_model="none",
             summary_model_backend=config.SUMMARY_BACKEND,
             full_transcript=None,
             structured_call_summary=None,
